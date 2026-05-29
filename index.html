@@ -248,19 +248,56 @@
     const blob = new Blob([JSON.stringify(manifest)], {type: 'application/manifest+json'});
     document.getElementById('pwa-manifest').href = URL.createObjectURL(blob);
 
-    // Service worker for offline
+    // Service worker for full offline caching
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
+      window.addEventListener('load', async () => {
         const sw = `
-          const CACHE = 'keg-crash-kit-v1';
-          self.addEventListener('install', e => { self.skipWaiting(); });
-          self.addEventListener('activate', e => { e.waitUntil(clients.claim()); });
+          const CACHE = 'keg-crash-kit-v2';
+          const URL_TO_CACHE = self.location.href.replace('service-worker.js', '');
+
+          self.addEventListener('install', e => {
+            e.waitUntil(
+              caches.open(CACHE).then(cache => {
+                return cache.addAll([
+                  self.registration.scope,
+                  self.registration.scope + 'index.html',
+                ]).catch(() => {});
+              }).then(() => self.skipWaiting())
+            );
+          });
+
+          self.addEventListener('activate', e => {
+            e.waitUntil(
+              caches.keys().then(keys =>
+                Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+              ).then(() => clients.claim())
+            );
+          });
+
           self.addEventListener('fetch', e => {
-            e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+            e.respondWith(
+              caches.match(e.request).then(cached => {
+                if (cached) return cached;
+                return fetch(e.request).then(response => {
+                  if (!response || response.status !== 200) return response;
+                  const clone = response.clone();
+                  caches.open(CACHE).then(cache => cache.put(e.request, clone));
+                  return response;
+                }).catch(() => caches.match(e.request));
+              })
+            );
           });
         `;
-        const swBlob = new Blob([sw], {type: 'application/javascript'});
-        navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(e => console.log('SW:', e));
+        try {
+          const swBlob = new Blob([sw], {type: 'application/javascript'});
+          const swUrl = URL.createObjectURL(swBlob);
+          const reg = await navigator.serviceWorker.register(swUrl);
+          // Force the page itself into cache immediately
+          if ('caches' in window) {
+            const cache = await caches.open('keg-crash-kit-v2');
+            await cache.add(window.location.href).catch(() => {});
+          }
+        } catch(e) { console.log('SW error:', e); }
       });
     }
 
