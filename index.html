@@ -1525,8 +1525,8 @@ async function printReceipt() {
 
     if (printBtn) printBtn.textContent = 'Printing...';
 
-    // Send data in chunks of 512 bytes
-    const chunkSize = 512;
+    // Send data in chunks of 64 bytes with longer delay for RPP300
+    const chunkSize = 64;
     for (let i = 0; i < data.length; i += chunkSize) {
       const chunk = data.slice(i, i + chunkSize);
       try {
@@ -1534,7 +1534,7 @@ async function printReceipt() {
       } catch(e) {
         await btCharacteristic.writeValue(chunk);
       }
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise(r => setTimeout(r, 120));
     }
 
     if (printBtn) { printBtn.textContent = '✓ Printed!'; printBtn.disabled = false; }
